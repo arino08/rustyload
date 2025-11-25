@@ -298,29 +298,6 @@ fn percentile(sorted_data: &[u128], pct: f64) -> u128 {
     }
 }
 
-/// Parse a header string in the format "Key: Value" or "Key=Value"
-pub fn parse_header(header: &str) -> Result<(String, String), String> {
-    // Try splitting by ": " first (standard HTTP header format)
-    if let Some((key, value)) = header.split_once(": ") {
-        return Ok((key.trim().to_string(), value.trim().to_string()));
-    }
-
-    // Try splitting by ":" (without space)
-    if let Some((key, value)) = header.split_once(':') {
-        return Ok((key.trim().to_string(), value.trim().to_string()));
-    }
-
-    // Try splitting by "=" as fallback
-    if let Some((key, value)) = header.split_once('=') {
-        return Ok((key.trim().to_string(), value.trim().to_string()));
-    }
-
-    Err(format!(
-        "Invalid header format: '{}'. Expected 'Key: Value' or 'Key=Value'",
-        header
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,50 +327,6 @@ mod tests {
         assert!(HttpMethod::from_str("INVALID").is_err());
         assert!(HttpMethod::from_str("").is_err());
         assert!(HttpMethod::from_str("CONNECT").is_err());
-    }
-
-    // ==================== Header Parsing Tests ====================
-
-    #[test]
-    fn test_parse_header_colon_space() {
-        let result = parse_header("Content-Type: application/json");
-        assert!(result.is_ok());
-        let (key, value) = result.unwrap();
-        assert_eq!(key, "Content-Type");
-        assert_eq!(value, "application/json");
-    }
-
-    #[test]
-    fn test_parse_header_colon_only() {
-        let result = parse_header("Authorization:Bearer token123");
-        assert!(result.is_ok());
-        let (key, value) = result.unwrap();
-        assert_eq!(key, "Authorization");
-        assert_eq!(value, "Bearer token123");
-    }
-
-    #[test]
-    fn test_parse_header_equals() {
-        let result = parse_header("X-Custom=myvalue");
-        assert!(result.is_ok());
-        let (key, value) = result.unwrap();
-        assert_eq!(key, "X-Custom");
-        assert_eq!(value, "myvalue");
-    }
-
-    #[test]
-    fn test_parse_header_invalid() {
-        let result = parse_header("invalid-header-no-separator");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_header_with_spaces() {
-        let result = parse_header("  Content-Type  :  application/json  ");
-        assert!(result.is_ok());
-        let (key, value) = result.unwrap();
-        assert_eq!(key, "Content-Type");
-        assert_eq!(value, "application/json");
     }
 
     // ==================== LoadTestConfig Tests ====================

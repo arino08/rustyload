@@ -1,41 +1,33 @@
 mod client;
+mod interactive;
 
 use anyhow::Result;
 use clap::Parser;
 use colored::*;
-use std::collections::HashMap;
+use dialoguer::{theme::ColorfulTheme, Confirm};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "RustyLoad - A blazingly fast HTTP load testing tool", long_about = None)]
 struct Args {
     /// Target URL to test
     #[clap(short, long)]
-    url: String,
+    url: Option<String>,
 
     /// Number of requests to send
-    #[clap(short = 'n', long, default_value_t = 100)]
-    requests: u64,
+    #[clap(short = 'n', long)]
+    requests: Option<u64>,
 
     /// Number of concurrent requests
-    #[clap(short, long, default_value_t = 10)]
-    concurrency: u64,
-
-    /// HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD)
-    #[clap(short, long, default_value = "GET")]
-    method: String,
-
-    /// Custom headers (can be used multiple times)
-    /// Format: "Header-Name: Header-Value" or "Header-Name=Header-Value"
-    #[clap(short = 'H', long = "header", value_name = "HEADER")]
-    headers: Vec<String>,
-
-    /// Request body (for POST, PUT, PATCH)
     #[clap(short, long)]
-    body: Option<String>,
+    concurrency: Option<u64>,
 
-    /// Request timeout in seconds
-    #[clap(short, long, default_value_t = 30)]
-    timeout: u64,
+    /// Run in interactive mode (guided configuration)
+    #[clap(short, long)]
+    interactive: bool,
+
+    /// Skip confirmation and run immediately
+    #[clap(short = 'y', long)]
+    yes: bool,
 }
 
 fn print_banner() {
@@ -60,108 +52,6 @@ fn print_banner() {
             .bold()
     );
     println!();
-}
-
-fn print_config(config: &client::LoadTestConfig) {
-    println!(
-        "{}",
-        "┌─────────────────────────────────────────────────┐".dimmed()
-    );
-    println!(
-        "{} {:<47} {}",
-        "│".dimmed(),
-        "Configuration".white().bold(),
-        "│".dimmed()
-    );
-    println!(
-        "{}",
-        "├─────────────────────────────────────────────────┤".dimmed()
-    );
-    println!(
-        "{} {:<15} {:<31} {}",
-        "│".dimmed(),
-        "Target:".green(),
-        truncate_url(&config.url, 31),
-        "│".dimmed()
-    );
-    println!(
-        "{} {:<15} {:<31} {}",
-        "│".dimmed(),
-        "Method:".green(),
-        format!("{:?}", config.method),
-        "│".dimmed()
-    );
-    println!(
-        "{} {:<15} {:<31} {}",
-        "│".dimmed(),
-        "Requests:".green(),
-        config.num_requests,
-        "│".dimmed()
-    );
-    println!(
-        "{} {:<15} {:<31} {}",
-        "│".dimmed(),
-        "Concurrency:".green(),
-        config.concurrency,
-        "│".dimmed()
-    );
-    println!(
-        "{} {:<15} {:<31} {}",
-        "│".dimmed(),
-        "Timeout:".green(),
-        format!("{} seconds", config.timeout_secs),
-        "│".dimmed()
-    );
-
-    if !config.headers.is_empty() {
-        println!(
-            "{}",
-            "├─────────────────────────────────────────────────┤".dimmed()
-        );
-        println!(
-            "{} {:<47} {}",
-            "│".dimmed(),
-            "Custom Headers".white().bold(),
-            "│".dimmed()
-        );
-        for (key, value) in &config.headers {
-            let header_str = format!("{}: {}", key, truncate_url(value, 20));
-            println!(
-                "{} {:<47} {}",
-                "│".dimmed(),
-                header_str.dimmed(),
-                "│".dimmed()
-            );
-        }
-    }
-
-    if let Some(body) = &config.body {
-        println!(
-            "{}",
-            "├─────────────────────────────────────────────────┤".dimmed()
-        );
-        println!(
-            "{} {:<15} {:<31} {}",
-            "│".dimmed(),
-            "Body:".green(),
-            truncate_url(body, 31),
-            "│".dimmed()
-        );
-    }
-
-    println!(
-        "{}",
-        "└─────────────────────────────────────────────────┘".dimmed()
-    );
-    println!();
-}
-
-fn truncate_url(url: &str, max_len: usize) -> String {
-    if url.len() <= max_len {
-        url.to_string()
-    } else {
-        format!("{}...", &url[..max_len - 3])
-    }
 }
 
 fn print_results(stats: &client::LoadTestStats) {
@@ -343,50 +233,46 @@ fn print_results(stats: &client::LoadTestStats) {
     println!();
 }
 
-fn parse_headers(header_strings: &[String]) -> Result<HashMap<String, String>> {
-    let mut headers = HashMap::new();
-
-    for header in header_strings {
-        match client::parse_header(header) {
-            Ok((key, value)) => {
-                headers.insert(key, value);
-            }
-            Err(e) => {
-                eprintln!("{}: {}", "Warning".yellow(), e);
-            }
-        }
-    }
-
-    Ok(headers)
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Parse HTTP method
-    let method = match client::HttpMethod::from_str(&args.method) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("{}: {}", "Error".red().bold(), e);
-            std::process::exit(1);
-        }
+    print_banner();
+
+    // Determine if we should run in interactive mode
+    let use_interactive = args.interactive || args.url.is_none();
+
+    let config = if use_interactive {
+        // Interactive mode - guide the user through configuration
+        interactive::run_interactive_mode(args.url)?
+    } else {
+        // Quick mode - use CLI args with defaults
+        let url = args.url.unwrap(); // Safe because we checked above
+        let requests = args.requests.unwrap_or(100);
+        let concurrency = args.concurrency.unwrap_or(10);
+
+        client::LoadTestConfig::new(url, requests, concurrency)
     };
 
-    // Parse headers
-    let headers = parse_headers(&args.headers)?;
+    // Show configuration summary
+    interactive::display_config_summary(&config);
 
-    // Build configuration
-    let config = client::LoadTestConfig::new(args.url, args.requests, args.concurrency)
-        .with_method(method)
-        .with_headers(headers)
-        .with_body(args.body)
-        .with_timeout(args.timeout);
+    // Confirm before running (unless --yes flag is set)
+    if !args.yes {
+        let theme = ColorfulTheme::default();
+        let confirmed = Confirm::with_theme(&theme)
+            .with_prompt("Start load test?")
+            .default(true)
+            .interact()?;
 
-    print_banner();
-    print_config(&config);
+        if !confirmed {
+            println!("{}", "Load test cancelled.".yellow());
+            return Ok(());
+        }
+    }
 
-    println!("{}", "Starting load test...".yellow());
+    println!();
+    println!("{}", "🚀 Starting load test...".yellow().bold());
     println!();
 
     let stats = client::run_load_test(config).await?;

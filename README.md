@@ -43,8 +43,9 @@ Whether you're testing your local development server or benchmarking a productio
 - **🚀 High Performance** - Built with Rust and Tokio for maximum throughput
 - **⚡ Concurrent Requests** - Control concurrency level with semaphore-based limiting
 - **📊 Detailed Statistics** - Min, max, average latency plus p50, p95, p99 percentiles
+- **🎯 Interactive Mode** - Guided TUI for easy configuration (no need to memorize flags!)
 - **🔧 HTTP Methods** - Support for GET, POST, PUT, DELETE, PATCH, and HEAD
-- **📝 Custom Headers** - Add any custom headers to your requests
+- **📝 Custom Headers** - Add any custom headers including Authorization
 - **📦 Request Body** - Send JSON or any payload with POST/PUT/PATCH requests
 - **⏱️ Configurable Timeout** - Set request timeout in seconds
 - **🎨 Beautiful TUI** - Colorful terminal output with progress bar
@@ -55,119 +56,177 @@ Whether you're testing your local development server or benchmarking a productio
 
 ## 📦 Installation
 
-### Prerequisites
+### Option 1: Download Pre-built Binary (Easiest)
 
-- [Rust](https://www.rust-lang.org/tools/install) (1.70 or later)
-- Cargo (comes with Rust)
+Download the latest release for your platform from the [Releases page](https://github.com/yourusername/rustyload/releases).
 
-### Build from Source
+#### Linux
+
+```bash
+# Download the latest release
+curl -LO https://github.com/yourusername/rustyload/releases/latest/download/rustyload-linux-x86_64.tar.gz
+
+# Extract the binary
+tar xzf rustyload-linux-x86_64.tar.gz
+
+# Move to a directory in your PATH
+sudo mv rustyload /usr/local/bin/
+
+# Verify installation
+rustyload --version
+```
+
+#### macOS
+
+```bash
+# For Intel Macs
+curl -LO https://github.com/yourusername/rustyload/releases/latest/download/rustyload-macos-x86_64.tar.gz
+tar xzf rustyload-macos-x86_64.tar.gz
+
+# For Apple Silicon (M1/M2/M3)
+curl -LO https://github.com/yourusername/rustyload/releases/latest/download/rustyload-macos-aarch64.tar.gz
+tar xzf rustyload-macos-aarch64.tar.gz
+
+# Move to PATH
+sudo mv rustyload /usr/local/bin/
+
+# Verify installation
+rustyload --version
+```
+
+#### Windows
+
+1. Download `rustyload-windows-x86_64.zip` from the [Releases page](https://github.com/yourusername/rustyload/releases)
+2. Extract the `.zip` file
+3. Move `rustyload.exe` to a directory in your PATH (e.g., `C:\Windows\System32\` or create a custom directory)
+4. Or run directly: `.\rustyload.exe --version`
+
+### Option 2: Install via Cargo
+
+If you have Rust installed:
+
+```bash
+# Install directly from GitHub
+cargo install --git https://github.com/yourusername/rustyload
+
+# Or clone and install locally
+git clone https://github.com/yourusername/rustyload
+cd rustyload
+cargo install --path .
+```
+
+The binary will be installed to `~/.cargo/bin/rustyload`.
+
+### Option 3: Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/rustyload.git
+git clone https://github.com/yourusername/rustyload
 cd rustyload
 
 # Build in release mode (optimized)
 cargo build --release
 
 # The binary will be at ./target/release/rustyload
-```
+./target/release/rustyload --version
 
-### Install via Cargo
-
-```bash
-cargo install --path .
+# Optionally, copy to your PATH
+sudo cp target/release/rustyload /usr/local/bin/
 ```
 
 ---
 
 ## 🚀 Usage
 
-### Basic Usage
+RustyLoad offers two modes: **Interactive Mode** (beginner-friendly) and **Quick Mode** (for power users).
+
+### Interactive Mode (Recommended for Beginners)
+
+Simply run without arguments, or use the `-i` flag:
 
 ```bash
-# Send 100 requests with 10 concurrent connections (defaults)
-rustyload --url https://httpbin.org/get
+# Launches interactive configuration wizard
+rustyload
 
-# Short form
+# Or explicitly request interactive mode
+rustyload -i
+```
+
+The interactive mode will guide you through:
+1. ✅ Target URL
+2. ✅ HTTP Method (GET, POST, PUT, DELETE, etc.)
+3. ✅ Number of requests
+4. ✅ Concurrency level
+5. ✅ Timeout settings
+6. ✅ Custom headers (optional)
+7. ✅ Request body (optional)
+
+```
+🚀 Interactive Mode - Let's configure your load test!
+──────────────────────────────────────────────────
+
+? Target URL: https://api.example.com/health
+? HTTP Method: GET
+? Number of requests: 100
+? Concurrent requests: 10
+? Timeout (seconds): 30
+? Additional options: Skip (use defaults)
+
+──────────────────────────────────────────────────
+✅ Configuration complete!
+```
+
+### Quick Mode (For Power Users)
+
+If you know what you want, use CLI arguments:
+
+```bash
+# Basic usage with defaults (100 requests, 10 concurrent)
 rustyload -u https://httpbin.org/get
-```
 
-### Custom Configuration
-
-```bash
-# Send 500 requests with 50 concurrent connections
-rustyload --url https://api.example.com/health --requests 500 --concurrency 50
-
-# Short form
+# Custom requests and concurrency
 rustyload -u https://api.example.com/health -n 500 -c 50
-```
 
-### POST Request with JSON Body
-
-```bash
-rustyload -u https://httpbin.org/post \
-  -m POST \
-  -H "Content-Type: application/json" \
-  -b '{"name": "test", "value": 123}' \
-  -n 100 -c 10
-```
-
-### With Custom Headers and Authentication
-
-```bash
-rustyload -u https://api.example.com/data \
-  -m GET \
-  -H "Authorization: Bearer your-token-here" \
-  -H "X-Custom-Header: custom-value" \
-  -n 200 -c 20
-```
-
-### PUT Request with Timeout
-
-```bash
-rustyload -u https://api.example.com/resource/1 \
-  -m PUT \
-  -H "Content-Type: application/json" \
-  -b '{"updated": true}' \
-  -t 60 \
-  -n 50 -c 5
+# Skip confirmation prompt with -y
+rustyload -u https://httpbin.org/get -n 100 -c 10 -y
 ```
 
 ### Command Line Options
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--url` | `-u` | Target URL to test (required) | - |
+| `--url` | `-u` | Target URL to test | - |
 | `--requests` | `-n` | Total number of requests to send | 100 |
 | `--concurrency` | `-c` | Number of concurrent requests | 10 |
-| `--method` | `-m` | HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD) | GET |
-| `--header` | `-H` | Custom header (can be used multiple times) | - |
-| `--body` | `-b` | Request body for POST/PUT/PATCH | - |
-| `--timeout` | `-t` | Request timeout in seconds | 30 |
+| `--interactive` | `-i` | Run in interactive mode | auto |
+| `--yes` | `-y` | Skip confirmation prompt | false |
 | `--help` | `-h` | Show help message | - |
 | `--version` | `-V` | Show version | - |
+
+> **Note:** If you don't provide a URL, RustyLoad automatically enters interactive mode!
 
 ### Example Output
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ Configuration                                   │
+│ 📋 Configuration Summary                         │
 ├─────────────────────────────────────────────────┤
-│ Target:         https://httpbin.org/post        │
-│ Method:         POST                            │
-│ Requests:       100                             │
-│ Concurrency:    10                              │
-│ Timeout:        30 seconds                      │
+│ URL:               https://httpbin.org/post     │
+│ Method:            POST                         │
+│ Requests:          100                          │
+│ Concurrency:       10                           │
+│ Timeout:           30s                          │
 ├─────────────────────────────────────────────────┤
-│ Custom Headers                                  │
-│ Content-Type: application/json                  │
-│ Authorization: Bearer token123                  │
+│ Headers:                                        │
+│   Content-Type: application/json                │
+│   Authorization: Bearer t...                    │
 ├─────────────────────────────────────────────────┤
-│ Body:           {"name":"test"}                 │
+│ Body:              {"name":"test"}              │
 └─────────────────────────────────────────────────┘
 
-Starting load test...
+? Start load test? Yes
+
+🚀 Starting load test...
 
   [00:00:12] [████████████████████████████████████████] 100/100 (100%) Complete!
 
@@ -232,7 +291,7 @@ This prevents overwhelming both your system and the target server.
 
 ### Request Flow
 
-1. **Parse CLI arguments** - Validate URL, method, headers, body
+1. **Configure** - Interactive prompts or CLI args
 2. **Build HTTP client** - Configure timeout, user agent
 3. **Create semaphore** - Limit concurrent requests
 4. **Spawn async tasks** - One task per request
@@ -248,21 +307,25 @@ This prevents overwhelming both your system and the target server.
 rustyload/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml          # GitHub Actions CI/CD
+│       ├── ci.yml              # GitHub Actions CI/CD
+│       └── release.yml         # Automated release builds
+├── docs/
+│   └── TECHNICAL_GUIDE.md      # Detailed technical documentation
 ├── src/
-│   ├── main.rs             # CLI parsing, TUI, orchestration
-│   └── client.rs           # HTTP client, load testing, statistics
-├── Cargo.toml              # Dependencies and metadata
-├── README.md               # Documentation
-└── LICENSE                 # MIT License
+│   ├── main.rs                 # CLI parsing, orchestration
+│   ├── client.rs               # HTTP client, load testing, statistics
+│   └── interactive.rs          # Interactive TUI prompts
+├── Cargo.toml                  # Dependencies and metadata
+├── README.md                   # This file
+└── LICENSE                     # MIT License
 ```
 
 ### Module Breakdown
 
 #### `main.rs`
-- **CLI Parsing**: Uses `clap` for argument parsing with derive macros
-- **TUI Rendering**: Colorful output using `colored` crate
-- **Orchestration**: Coordinates the flow from input to output
+- **CLI Parsing**: Uses `clap` for argument parsing
+- **Mode Selection**: Chooses between interactive and quick mode
+- **Results Display**: Shows statistics in a beautiful table
 
 #### `client.rs`
 - **HTTP Client**: Built on `reqwest` with custom configuration
@@ -271,6 +334,12 @@ rustyload/
 - **Progress**: Real-time progress bar using `indicatif`
 - **Configuration**: Builder pattern for flexible test setup
 
+#### `interactive.rs`
+- **Guided Setup**: Step-by-step configuration wizard
+- **Input Validation**: Validates URLs, numbers, headers
+- **Smart Defaults**: Sensible defaults for quick setup
+- **User-Friendly**: Clear prompts with helpful descriptions
+
 ### Key Dependencies
 
 | Crate | Purpose |
@@ -278,9 +347,30 @@ rustyload/
 | `tokio` | Async runtime for concurrent execution |
 | `reqwest` | HTTP client for making requests |
 | `clap` | Command-line argument parsing |
+| `dialoguer` | Interactive terminal prompts |
 | `indicatif` | Progress bar and spinners |
 | `colored` | Terminal colors and styling |
 | `anyhow` | Ergonomic error handling |
+
+---
+
+## 📊 Performance Characteristics
+
+RustyLoad is designed to be efficient:
+
+- **Memory**: Uses `Arc` for shared state, avoiding unnecessary clones
+- **CPU**: Async I/O means threads aren't blocked waiting for responses
+- **Network**: Reuses HTTP client connections where possible
+
+### Benchmarks
+
+Tested on a local server (your results may vary):
+
+| Requests | Concurrency | Time | Req/sec |
+|----------|-------------|------|---------|
+| 1,000 | 10 | 2.3s | 434 |
+| 1,000 | 50 | 0.8s | 1,250 |
+| 10,000 | 100 | 5.2s | 1,923 |
 
 ---
 
@@ -303,29 +393,8 @@ cargo test test_percentile
 
 - **Unit tests** for percentile calculations
 - **Unit tests** for statistics aggregation
-- **Unit tests** for header parsing
 - **Unit tests** for HTTP method parsing
 - **Unit tests** for configuration builder
-
----
-
-## 📊 Performance Characteristics
-
-RustyLoad is designed to be efficient:
-
-- **Memory**: Uses `Arc` for shared state, avoiding unnecessary clones
-- **CPU**: Async I/O means threads aren't blocked waiting for responses
-- **Network**: Reuses HTTP client connections where possible
-
-### Benchmarks
-
-Tested on a local server (your results may vary):
-
-| Requests | Concurrency | Time | Req/sec |
-|----------|-------------|------|---------|
-| 1,000 | 10 | 2.3s | 434 |
-| 1,000 | 50 | 0.8s | 1,250 |
-| 10,000 | 100 | 5.2s | 1,923 |
 
 ---
 
@@ -372,7 +441,7 @@ Future enhancements planned:
 - [ ] **Duration Mode**: Run for X seconds instead of X requests
 - [ ] **Cookies**: Cookie jar support for session testing
 - [ ] **HTTP/2**: HTTP/2 protocol support
-- [ ] **mTLS**: Mutual TLS authentication
+- [ ] **Saved Profiles**: Save and load test configurations
 
 ---
 
@@ -414,6 +483,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Tokio](https://tokio.rs/) - Async runtime for Rust
 - [reqwest](https://github.com/seanmonstar/reqwest) - HTTP client
 - [clap](https://github.com/clap-rs/clap) - Command line argument parser
+- [dialoguer](https://github.com/console-rs/dialoguer) - Interactive prompts
 - [indicatif](https://github.com/console-rs/indicatif) - Progress bars
 - Inspired by tools like [wrk](https://github.com/wg/wrk), [hey](https://github.com/rakyll/hey), and [bombardier](https://github.com/codesenberg/bombardier)
 
