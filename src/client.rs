@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::{Client, Method};
@@ -92,6 +94,7 @@ impl LoadTestConfig {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RequestResult {
     pub duration: u128,
     pub status: u16,
@@ -392,11 +395,11 @@ mod tests {
 
         // p50 should be around the middle (between 50 and 60)
         let p50 = percentile(&data, 50.0);
-        assert!(p50 >= 50 && p50 <= 60, "p50 was {}", p50);
+        assert!((50..=60).contains(&p50), "p50 was {}", p50);
 
         // p90 should be near the end
         let p90 = percentile(&data, 90.0);
-        assert!(p90 >= 80 && p90 <= 100, "p90 was {}", p90);
+        assert!((80..=100).contains(&p90), "p90 was {}", p90);
     }
 
     #[test]
@@ -406,15 +409,15 @@ mod tests {
 
         // p50 should be ~50
         let p50 = percentile(&data, 50.0);
-        assert!(p50 >= 49 && p50 <= 51, "p50 was {}", p50);
+        assert!((49..=51).contains(&p50), "p50 was {}", p50);
 
         // p95 should be ~95
         let p95 = percentile(&data, 95.0);
-        assert!(p95 >= 94 && p95 <= 96, "p95 was {}", p95);
+        assert!((94..=96).contains(&p95), "p95 was {}", p95);
 
         // p99 should be ~99
         let p99 = percentile(&data, 99.0);
-        assert!(p99 >= 98 && p99 <= 100, "p99 was {}", p99);
+        assert!((98..=100).contains(&p99), "p99 was {}", p99);
     }
 
     // ==================== Calculate Stats Tests ====================
@@ -586,13 +589,13 @@ mod tests {
         let stats = calculate_stats(&results, 10000);
 
         // p50 should be around 50
-        assert!(stats.p50 >= 49 && stats.p50 <= 51, "p50 was {}", stats.p50);
+        assert!((49..=51).contains(&stats.p50), "p50 was {}", stats.p50);
 
         // p95 should be around 95
-        assert!(stats.p95 >= 94 && stats.p95 <= 96, "p95 was {}", stats.p95);
+        assert!((94..=96).contains(&stats.p95), "p95 was {}", stats.p95);
 
         // p99 should be around 99
-        assert!(stats.p99 >= 98 && stats.p99 <= 100, "p99 was {}", stats.p99);
+        assert!((98..=100).contains(&stats.p99), "p99 was {}", stats.p99);
     }
 
     // ==================== RequestResult Tests ====================
