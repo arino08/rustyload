@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+# Top-level permissions for the entire workflow
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -81,8 +85,6 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
