@@ -58,13 +58,13 @@ Whether you're testing your local development server or benchmarking a productio
 
 ### Option 1: Download Pre-built Binary (Easiest)
 
-Download the latest release for your platform from the [Releases page](https://github.com/yourusername/rustyload/releases).
+Download the latest release for your platform from the [Releases page](https://github.com/arino08/rustyload/releases).
 
 #### Linux
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/yourusername/rustyload/releases/latest/download/rustyload-linux-x86_64.tar.gz
+curl -LO https://github.com/arino08/rustyload/releases/latest/download/rustyload-linux-x86_64.tar.gz
 
 # Extract the binary
 tar xzf rustyload-linux-x86_64.tar.gz
@@ -80,11 +80,11 @@ rustyload --version
 
 ```bash
 # For Intel Macs
-curl -LO https://github.com/yourusername/rustyload/releases/latest/download/rustyload-macos-x86_64.tar.gz
+curl -LO https://github.com/arino08/rustyload/releases/latest/download/rustyload-macos-x86_64.tar.gz
 tar xzf rustyload-macos-x86_64.tar.gz
 
 # For Apple Silicon (M1/M2/M3)
-curl -LO https://github.com/yourusername/rustyload/releases/latest/download/rustyload-macos-aarch64.tar.gz
+curl -LO https://github.com/arino08/rustyload/releases/latest/download/rustyload-macos-aarch64.tar.gz
 tar xzf rustyload-macos-aarch64.tar.gz
 
 # Move to PATH
@@ -96,7 +96,7 @@ rustyload --version
 
 #### Windows
 
-1. Download `rustyload-windows-x86_64.zip` from the [Releases page](https://github.com/yourusername/rustyload/releases)
+1. Download `rustyload-windows-x86_64.zip` from the [Releases page](https://github.com/arino08/rustyload/releases)
 2. Extract the `.zip` file
 3. Move `rustyload.exe` to a directory in your PATH (e.g., `C:\Windows\System32\` or create a custom directory)
 4. Or run directly: `.\rustyload.exe --version`
@@ -107,10 +107,10 @@ If you have Rust installed:
 
 ```bash
 # Install directly from GitHub
-cargo install --git https://github.com/yourusername/rustyload
+cargo install --git https://github.com/arino08/rustyload
 
 # Or clone and install locally
-git clone https://github.com/yourusername/rustyload
+git clone https://github.com/arino08/rustyload
 cd rustyload
 cargo install --path .
 ```
@@ -121,7 +121,7 @@ The binary will be installed to `~/.cargo/bin/rustyload`.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/rustyload
+git clone https://github.com/arino08/rustyload
 cd rustyload
 
 # Build in release mode (optimized)
