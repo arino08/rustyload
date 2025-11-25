@@ -1,9 +1,95 @@
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::Client;
+use reqwest::{Client, Method};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
+
+/// Supported HTTP methods for load testing
+#[derive(Debug, Clone, Default)]
+pub enum HttpMethod {
+    #[default]
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+    HEAD,
+}
+
+impl HttpMethod {
+    /// Parse a string into an HttpMethod
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_uppercase().as_str() {
+            "GET" => Ok(HttpMethod::GET),
+            "POST" => Ok(HttpMethod::POST),
+            "PUT" => Ok(HttpMethod::PUT),
+            "DELETE" => Ok(HttpMethod::DELETE),
+            "PATCH" => Ok(HttpMethod::PATCH),
+            "HEAD" => Ok(HttpMethod::HEAD),
+            _ => Err(format!("Unsupported HTTP method: {}", s)),
+        }
+    }
+
+    /// Convert to reqwest::Method
+    fn to_reqwest_method(&self) -> Method {
+        match self {
+            HttpMethod::GET => Method::GET,
+            HttpMethod::POST => Method::POST,
+            HttpMethod::PUT => Method::PUT,
+            HttpMethod::DELETE => Method::DELETE,
+            HttpMethod::PATCH => Method::PATCH,
+            HttpMethod::HEAD => Method::HEAD,
+        }
+    }
+}
+
+/// Configuration for the load test
+#[derive(Debug, Clone)]
+pub struct LoadTestConfig {
+    pub url: String,
+    pub method: HttpMethod,
+    pub headers: HashMap<String, String>,
+    pub body: Option<String>,
+    pub num_requests: u64,
+    pub concurrency: u64,
+    pub timeout_secs: u64,
+}
+
+impl LoadTestConfig {
+    pub fn new(url: String, num_requests: u64, concurrency: u64) -> Self {
+        Self {
+            url,
+            method: HttpMethod::GET,
+            headers: HashMap::new(),
+            body: None,
+            num_requests,
+            concurrency,
+            timeout_secs: 30,
+        }
+    }
+
+    pub fn with_method(mut self, method: HttpMethod) -> Self {
+        self.method = method;
+        self
+    }
+
+    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    pub fn with_body(mut self, body: Option<String>) -> Self {
+        self.body = body;
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
+        self
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RequestResult {
@@ -28,10 +114,30 @@ pub struct LoadTestStats {
     pub requests_per_second: f64,
 }
 
-pub async fn fire_single_request(client: &Client, url: &str) -> RequestResult {
+pub async fn fire_single_request(
+    client: &Client,
+    url: &str,
+    method: &HttpMethod,
+    headers: &HashMap<String, String>,
+    body: &Option<String>,
+) -> RequestResult {
     let start = Instant::now();
 
-    match client.get(url).send().await {
+    // Build the request
+    let mut request_builder = client.request(method.to_reqwest_method(), url);
+
+    // Add custom headers
+    for (key, value) in headers {
+        request_builder = request_builder.header(key, value);
+    }
+
+    // Add body if present
+    if let Some(body_content) = body {
+        request_builder = request_builder.body(body_content.clone());
+    }
+
+    // Send the request
+    match request_builder.send().await {
         Ok(response) => {
             let duration = start.elapsed().as_millis();
             let status = response.status().as_u16();
@@ -56,43 +162,46 @@ pub async fn fire_single_request(client: &Client, url: &str) -> RequestResult {
     }
 }
 
-pub async fn run_load_test(
-    url: &str,
-    num_requests: u64,
-    concurrency: u64,
-) -> Result<LoadTestStats> {
+pub async fn run_load_test(config: LoadTestConfig) -> Result<LoadTestStats> {
     let client = Client::builder()
         .user_agent("rustyload/0.1")
+        .timeout(std::time::Duration::from_secs(config.timeout_secs))
         .build()
         .context("Failed to build HTTP client")?;
 
     let client = Arc::new(client);
-    let semaphore = Arc::new(Semaphore::new(concurrency as usize));
+    let semaphore = Arc::new(Semaphore::new(config.concurrency as usize));
+    let method = Arc::new(config.method);
+    let headers = Arc::new(config.headers);
+    let body = Arc::new(config.body);
 
     // Create progress bar
-    let pb = ProgressBar::new(num_requests);
+    let pb = ProgressBar::new(config.num_requests);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
             .unwrap()
-            .progress_chars("█▓▒░  ")
+            .progress_chars("█▓▒░  "),
     );
     pb.set_message("Sending requests...");
 
     let overall_start = Instant::now();
 
     // Spawn all tasks
-    let mut handles = Vec::with_capacity(num_requests as usize);
+    let mut handles = Vec::with_capacity(config.num_requests as usize);
 
-    for _ in 0..num_requests {
+    for _ in 0..config.num_requests {
         let client = Arc::clone(&client);
         let semaphore = Arc::clone(&semaphore);
-        let url = url.to_string();
+        let url = config.url.clone();
+        let method = Arc::clone(&method);
+        let headers = Arc::clone(&headers);
+        let body = Arc::clone(&body);
         let pb = pb.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
-            let result = fire_single_request(&client, &url).await;
+            let result = fire_single_request(&client, &url, &method, &headers, &body).await;
             pb.inc(1);
             result
         });
@@ -101,7 +210,7 @@ pub async fn run_load_test(
     }
 
     // Collect results
-    let mut results = Vec::with_capacity(num_requests as usize);
+    let mut results = Vec::with_capacity(config.num_requests as usize);
     for handle in handles {
         if let Ok(result) = handle.await {
             results.push(result);
@@ -186,5 +295,401 @@ fn percentile(sorted_data: &[u128], pct: f64) -> u128 {
         let lower_val = sorted_data[lower] as f64;
         let upper_val = sorted_data[upper] as f64;
         (lower_val + weight * (upper_val - lower_val)) as u128
+    }
+}
+
+/// Parse a header string in the format "Key: Value" or "Key=Value"
+pub fn parse_header(header: &str) -> Result<(String, String), String> {
+    // Try splitting by ": " first (standard HTTP header format)
+    if let Some((key, value)) = header.split_once(": ") {
+        return Ok((key.trim().to_string(), value.trim().to_string()));
+    }
+
+    // Try splitting by ":" (without space)
+    if let Some((key, value)) = header.split_once(':') {
+        return Ok((key.trim().to_string(), value.trim().to_string()));
+    }
+
+    // Try splitting by "=" as fallback
+    if let Some((key, value)) = header.split_once('=') {
+        return Ok((key.trim().to_string(), value.trim().to_string()));
+    }
+
+    Err(format!(
+        "Invalid header format: '{}'. Expected 'Key: Value' or 'Key=Value'",
+        header
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== HttpMethod Tests ====================
+
+    #[test]
+    fn test_http_method_from_str() {
+        assert!(matches!(HttpMethod::from_str("GET"), Ok(HttpMethod::GET)));
+        assert!(matches!(HttpMethod::from_str("get"), Ok(HttpMethod::GET)));
+        assert!(matches!(HttpMethod::from_str("POST"), Ok(HttpMethod::POST)));
+        assert!(matches!(HttpMethod::from_str("post"), Ok(HttpMethod::POST)));
+        assert!(matches!(HttpMethod::from_str("PUT"), Ok(HttpMethod::PUT)));
+        assert!(matches!(
+            HttpMethod::from_str("DELETE"),
+            Ok(HttpMethod::DELETE)
+        ));
+        assert!(matches!(
+            HttpMethod::from_str("PATCH"),
+            Ok(HttpMethod::PATCH)
+        ));
+        assert!(matches!(HttpMethod::from_str("HEAD"), Ok(HttpMethod::HEAD)));
+    }
+
+    #[test]
+    fn test_http_method_invalid() {
+        assert!(HttpMethod::from_str("INVALID").is_err());
+        assert!(HttpMethod::from_str("").is_err());
+        assert!(HttpMethod::from_str("CONNECT").is_err());
+    }
+
+    // ==================== Header Parsing Tests ====================
+
+    #[test]
+    fn test_parse_header_colon_space() {
+        let result = parse_header("Content-Type: application/json");
+        assert!(result.is_ok());
+        let (key, value) = result.unwrap();
+        assert_eq!(key, "Content-Type");
+        assert_eq!(value, "application/json");
+    }
+
+    #[test]
+    fn test_parse_header_colon_only() {
+        let result = parse_header("Authorization:Bearer token123");
+        assert!(result.is_ok());
+        let (key, value) = result.unwrap();
+        assert_eq!(key, "Authorization");
+        assert_eq!(value, "Bearer token123");
+    }
+
+    #[test]
+    fn test_parse_header_equals() {
+        let result = parse_header("X-Custom=myvalue");
+        assert!(result.is_ok());
+        let (key, value) = result.unwrap();
+        assert_eq!(key, "X-Custom");
+        assert_eq!(value, "myvalue");
+    }
+
+    #[test]
+    fn test_parse_header_invalid() {
+        let result = parse_header("invalid-header-no-separator");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_header_with_spaces() {
+        let result = parse_header("  Content-Type  :  application/json  ");
+        assert!(result.is_ok());
+        let (key, value) = result.unwrap();
+        assert_eq!(key, "Content-Type");
+        assert_eq!(value, "application/json");
+    }
+
+    // ==================== LoadTestConfig Tests ====================
+
+    #[test]
+    fn test_load_test_config_new() {
+        let config = LoadTestConfig::new("http://example.com".to_string(), 100, 10);
+        assert_eq!(config.url, "http://example.com");
+        assert_eq!(config.num_requests, 100);
+        assert_eq!(config.concurrency, 10);
+        assert!(matches!(config.method, HttpMethod::GET));
+        assert!(config.headers.is_empty());
+        assert!(config.body.is_none());
+    }
+
+    #[test]
+    fn test_load_test_config_builder() {
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let config = LoadTestConfig::new("http://example.com".to_string(), 100, 10)
+            .with_method(HttpMethod::POST)
+            .with_headers(headers)
+            .with_body(Some("{\"key\": \"value\"}".to_string()))
+            .with_timeout(60);
+
+        assert!(matches!(config.method, HttpMethod::POST));
+        assert_eq!(config.headers.len(), 1);
+        assert!(config.body.is_some());
+        assert_eq!(config.timeout_secs, 60);
+    }
+
+    // ==================== Percentile Tests ====================
+
+    #[test]
+    fn test_percentile_empty_data() {
+        let data: Vec<u128> = vec![];
+        assert_eq!(percentile(&data, 50.0), 0);
+        assert_eq!(percentile(&data, 95.0), 0);
+        assert_eq!(percentile(&data, 99.0), 0);
+    }
+
+    #[test]
+    fn test_percentile_single_element() {
+        let data = vec![100];
+        assert_eq!(percentile(&data, 0.0), 100);
+        assert_eq!(percentile(&data, 50.0), 100);
+        assert_eq!(percentile(&data, 100.0), 100);
+    }
+
+    #[test]
+    fn test_percentile_two_elements() {
+        let data = vec![100, 200];
+        assert_eq!(percentile(&data, 0.0), 100);
+        assert_eq!(percentile(&data, 50.0), 150); // interpolated
+        assert_eq!(percentile(&data, 100.0), 200);
+    }
+
+    #[test]
+    fn test_percentile_sorted_data() {
+        // 10 elements: indices 0-9
+        let data: Vec<u128> = (1..=10).map(|x| x * 10).collect(); // [10, 20, 30, ..., 100]
+
+        // p50 should be around the middle (between 50 and 60)
+        let p50 = percentile(&data, 50.0);
+        assert!(p50 >= 50 && p50 <= 60, "p50 was {}", p50);
+
+        // p90 should be near the end
+        let p90 = percentile(&data, 90.0);
+        assert!(p90 >= 80 && p90 <= 100, "p90 was {}", p90);
+    }
+
+    #[test]
+    fn test_percentile_100_elements() {
+        // Create 100 elements: [1, 2, 3, ..., 100]
+        let data: Vec<u128> = (1..=100).collect();
+
+        // p50 should be ~50
+        let p50 = percentile(&data, 50.0);
+        assert!(p50 >= 49 && p50 <= 51, "p50 was {}", p50);
+
+        // p95 should be ~95
+        let p95 = percentile(&data, 95.0);
+        assert!(p95 >= 94 && p95 <= 96, "p95 was {}", p95);
+
+        // p99 should be ~99
+        let p99 = percentile(&data, 99.0);
+        assert!(p99 >= 98 && p99 <= 100, "p99 was {}", p99);
+    }
+
+    // ==================== Calculate Stats Tests ====================
+
+    #[test]
+    fn test_calculate_stats_empty_results() {
+        let results: Vec<RequestResult> = vec![];
+        let stats = calculate_stats(&results, 1000);
+
+        assert_eq!(stats.total_requests, 0);
+        assert_eq!(stats.successful_requests, 0);
+        assert_eq!(stats.failed_requests, 0);
+        assert_eq!(stats.min_latency, 0);
+        assert_eq!(stats.max_latency, 0);
+        assert_eq!(stats.avg_latency, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_stats_all_successful() {
+        let results = vec![
+            RequestResult {
+                duration: 100,
+                status: 200,
+                success: true,
+                error: None,
+            },
+            RequestResult {
+                duration: 200,
+                status: 200,
+                success: true,
+                error: None,
+            },
+            RequestResult {
+                duration: 300,
+                status: 200,
+                success: true,
+                error: None,
+            },
+        ];
+
+        let stats = calculate_stats(&results, 1000);
+
+        assert_eq!(stats.total_requests, 3);
+        assert_eq!(stats.successful_requests, 3);
+        assert_eq!(stats.failed_requests, 0);
+        assert_eq!(stats.min_latency, 100);
+        assert_eq!(stats.max_latency, 300);
+        assert_eq!(stats.avg_latency, 200.0);
+    }
+
+    #[test]
+    fn test_calculate_stats_with_failures() {
+        let results = vec![
+            RequestResult {
+                duration: 100,
+                status: 200,
+                success: true,
+                error: None,
+            },
+            RequestResult {
+                duration: 50,
+                status: 0,
+                success: false,
+                error: Some("timeout".to_string()),
+            },
+            RequestResult {
+                duration: 200,
+                status: 500,
+                success: false,
+                error: None,
+            },
+            RequestResult {
+                duration: 150,
+                status: 201,
+                success: true,
+                error: None,
+            },
+        ];
+
+        let stats = calculate_stats(&results, 2000);
+
+        assert_eq!(stats.total_requests, 4);
+        assert_eq!(stats.successful_requests, 2);
+        assert_eq!(stats.failed_requests, 2);
+        // Only successful requests count for latency stats
+        assert_eq!(stats.min_latency, 100);
+        assert_eq!(stats.max_latency, 150);
+        assert_eq!(stats.avg_latency, 125.0);
+    }
+
+    #[test]
+    fn test_calculate_stats_all_failed() {
+        let results = vec![
+            RequestResult {
+                duration: 100,
+                status: 0,
+                success: false,
+                error: Some("error".to_string()),
+            },
+            RequestResult {
+                duration: 200,
+                status: 500,
+                success: false,
+                error: None,
+            },
+        ];
+
+        let stats = calculate_stats(&results, 500);
+
+        assert_eq!(stats.total_requests, 2);
+        assert_eq!(stats.successful_requests, 0);
+        assert_eq!(stats.failed_requests, 2);
+        // No successful requests, so latency stats are 0
+        assert_eq!(stats.min_latency, 0);
+        assert_eq!(stats.max_latency, 0);
+        assert_eq!(stats.avg_latency, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_stats_requests_per_second() {
+        let results = vec![
+            RequestResult {
+                duration: 100,
+                status: 200,
+                success: true,
+                error: None,
+            },
+            RequestResult {
+                duration: 100,
+                status: 200,
+                success: true,
+                error: None,
+            },
+            RequestResult {
+                duration: 100,
+                status: 200,
+                success: true,
+                error: None,
+            },
+            RequestResult {
+                duration: 100,
+                status: 200,
+                success: true,
+                error: None,
+            },
+        ];
+
+        // 4 requests in 2000ms = 2 req/sec
+        let stats = calculate_stats(&results, 2000);
+        assert_eq!(stats.requests_per_second, 2.0);
+
+        // 4 requests in 1000ms = 4 req/sec
+        let stats = calculate_stats(&results, 1000);
+        assert_eq!(stats.requests_per_second, 4.0);
+    }
+
+    #[test]
+    fn test_calculate_stats_percentiles() {
+        // Create 100 successful requests with durations 1-100
+        let results: Vec<RequestResult> = (1..=100)
+            .map(|i| RequestResult {
+                duration: i as u128,
+                status: 200,
+                success: true,
+                error: None,
+            })
+            .collect();
+
+        let stats = calculate_stats(&results, 10000);
+
+        // p50 should be around 50
+        assert!(stats.p50 >= 49 && stats.p50 <= 51, "p50 was {}", stats.p50);
+
+        // p95 should be around 95
+        assert!(stats.p95 >= 94 && stats.p95 <= 96, "p95 was {}", stats.p95);
+
+        // p99 should be around 99
+        assert!(stats.p99 >= 98 && stats.p99 <= 100, "p99 was {}", stats.p99);
+    }
+
+    // ==================== RequestResult Tests ====================
+
+    #[test]
+    fn test_request_result_clone() {
+        let result = RequestResult {
+            duration: 100,
+            status: 200,
+            success: true,
+            error: None,
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.duration, 100);
+        assert_eq!(cloned.status, 200);
+        assert!(cloned.success);
+        assert!(cloned.error.is_none());
+    }
+
+    #[test]
+    fn test_request_result_with_error() {
+        let result = RequestResult {
+            duration: 50,
+            status: 0,
+            success: false,
+            error: Some("Connection refused".to_string()),
+        };
+
+        assert!(!result.success);
+        assert_eq!(result.error, Some("Connection refused".to_string()));
     }
 }
