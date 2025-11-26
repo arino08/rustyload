@@ -1,15 +1,16 @@
-mod client;
 mod interactive;
+mod protocols;
 
 use anyhow::Result;
 use clap::Parser;
 use colored::*;
 use dialoguer::{theme::ColorfulTheme, Confirm};
+use protocols::{LoadTestStats, Protocol};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "RustyLoad - A blazingly fast HTTP load testing tool", long_about = None)]
+#[command(author, version, about = "RustyLoad - A blazingly fast load testing tool for HTTP and TCP services", long_about = None)]
 struct Args {
-    /// Target URL to test
+    /// Target URL (for HTTP) or host:port (for FlashKV)
     #[clap(short, long)]
     url: Option<String>,
 
@@ -28,6 +29,14 @@ struct Args {
     /// Skip confirmation and run immediately
     #[clap(short = 'y', long)]
     yes: bool,
+
+    /// Protocol to use: http, flashkv
+    #[clap(short, long, default_value = "http")]
+    protocol: String,
+
+    /// FlashKV command to execute (e.g., "PING", "GET key", "SET key value")
+    #[clap(long)]
+    command: Option<String>,
 }
 
 fn print_banner() {
@@ -47,23 +56,30 @@ fn print_banner() {
     );
     println!(
         "{}",
-        "  ⚡ Blazingly Fast HTTP Load Testing Tool ⚡"
-            .yellow()
-            .bold()
+        "  ⚡ Blazingly Fast Load Testing Tool ⚡".yellow().bold()
     );
+    println!("{}", "     HTTP | FlashKV (TCP Key-Value)".dimmed());
     println!();
 }
 
-fn print_results(stats: &client::LoadTestStats) {
+fn print_results(stats: &LoadTestStats, protocol: &Protocol) {
     println!();
     println!(
         "{}",
         "┌─────────────────────────────────────────────────┐".dimmed()
     );
+
+    let protocol_emoji = match protocol {
+        Protocol::Http => "🌐",
+        Protocol::FlashKV => "🗄️",
+    };
+
     println!(
         "{} {:<47} {}",
         "│".dimmed(),
-        "📊 Results".white().bold(),
+        format!("{} Results ({})", protocol_emoji, protocol.display_name())
+            .white()
+            .bold(),
         "│".dimmed()
     );
     println!(
@@ -251,7 +267,54 @@ async fn main() -> Result<()> {
         let requests = args.requests.unwrap_or(100);
         let concurrency = args.concurrency.unwrap_or(10);
 
-        client::LoadTestConfig::new(url, requests, concurrency)
+        // Determine protocol from args or URL
+        let protocol = Protocol::from_str(&args.protocol).unwrap_or(Protocol::Http);
+
+        match protocol {
+            Protocol::Http => {
+                let http_config = protocols::http::HttpConfig::new(url);
+                protocols::LoadTestConfig {
+                    protocol: Protocol::Http,
+                    num_requests: requests,
+                    concurrency,
+                    timeout_secs: 30,
+                    http_config: Some(http_config),
+                    flashkv_config: None,
+                }
+            }
+            Protocol::FlashKV => {
+                // Parse host:port from URL
+                let (host, port) = if url.contains(':') {
+                    let parts: Vec<&str> = url.split(':').collect();
+                    (
+                        parts[0].to_string(),
+                        parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(6379),
+                    )
+                } else {
+                    (url, 6379)
+                };
+
+                // Parse command from args
+                let commands = if let Some(cmd_str) = &args.command {
+                    vec![protocols::flashkv::FlashKVCommand::from_str(cmd_str)
+                        .unwrap_or(protocols::flashkv::FlashKVCommand::Ping)]
+                } else {
+                    vec![protocols::flashkv::FlashKVCommand::Ping]
+                };
+
+                let flashkv_config =
+                    protocols::flashkv::FlashKVConfig::new(host, port).with_commands(commands);
+
+                protocols::LoadTestConfig {
+                    protocol: Protocol::FlashKV,
+                    num_requests: requests,
+                    concurrency,
+                    timeout_secs: 30,
+                    http_config: None,
+                    flashkv_config: Some(flashkv_config),
+                }
+            }
+        }
     };
 
     // Show configuration summary
@@ -275,9 +338,37 @@ async fn main() -> Result<()> {
     println!("{}", "🚀 Starting load test...".yellow().bold());
     println!();
 
-    let stats = client::run_load_test(config).await?;
+    // Run the appropriate load test based on protocol
+    let stats = match config.protocol {
+        Protocol::Http => {
+            let http_config = config
+                .http_config
+                .as_ref()
+                .expect("HTTP config required for HTTP protocol");
+            protocols::http::run_load_test(
+                http_config,
+                config.num_requests,
+                config.concurrency,
+                config.timeout_secs,
+            )
+            .await?
+        }
+        Protocol::FlashKV => {
+            let flashkv_config = config
+                .flashkv_config
+                .as_ref()
+                .expect("FlashKV config required for FlashKV protocol");
+            protocols::flashkv::run_load_test(
+                flashkv_config,
+                config.num_requests,
+                config.concurrency,
+                config.timeout_secs,
+            )
+            .await?
+        }
+    };
 
-    print_results(&stats);
+    print_results(&stats, &config.protocol);
 
     // Final summary line
     if stats.failed_requests == 0 {

@@ -6,7 +6,7 @@
 ![Tokio](https://img.shields.io/badge/Tokio-async-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**A blazingly fast, concurrent HTTP load testing tool built in Rust**
+**A blazingly fast, concurrent load testing tool for HTTP and TCP services built in Rust**
 
 [Features](#-features) •
 [Installation](#-installation) •
@@ -21,9 +21,14 @@
 
 ## 📖 Overview
 
-RustyLoad is a command-line HTTP load testing tool designed to stress-test web servers and APIs. Built with Rust's async runtime (Tokio), it can send thousands of concurrent requests while efficiently managing system resources.
+RustyLoad is a command-line load testing tool designed to stress-test web servers, APIs, and TCP-based services like key-value databases. Built with Rust's async runtime (Tokio), it can send thousands of concurrent requests while efficiently managing system resources.
 
-Whether you're testing your local development server or benchmarking a production API, RustyLoad provides detailed latency statistics including percentiles (p50, p95, p99) to help you understand your server's performance characteristics.
+Whether you're testing your local development server, benchmarking a production API, or load testing your Redis-like FlashKV database, RustyLoad provides detailed latency statistics including percentiles (p50, p95, p99) to help you understand your service's performance characteristics.
+
+### Supported Protocols
+
+- **HTTP/HTTPS** - REST APIs, web servers, microservices
+- **FlashKV (TCP)** - Redis-like in-memory key-value databases
 
 ```
   ____           _         _                    _
@@ -33,24 +38,34 @@ Whether you're testing your local development server or benchmarking a productio
  |_| \_\\__,_|___/\__|\__, |_____\___/ \__,_|\__,_|
                       |___/
 
-  ⚡ Blazingly Fast HTTP Load Testing Tool ⚡
+  ⚡ Blazingly Fast Load Testing Tool ⚡
+     HTTP | FlashKV (TCP Key-Value)
 ```
 
 ---
 
 ## ✨ Features
 
+### Core Features
 - **🚀 High Performance** - Built with Rust and Tokio for maximum throughput
 - **⚡ Concurrent Requests** - Control concurrency level with semaphore-based limiting
 - **📊 Detailed Statistics** - Min, max, average latency plus p50, p95, p99 percentiles
 - **🎯 Interactive Mode** - Guided TUI for easy configuration (no need to memorize flags!)
-- **🔧 HTTP Methods** - Support for GET, POST, PUT, DELETE, PATCH, and HEAD
-- **📝 Custom Headers** - Add any custom headers including Authorization
-- **📦 Request Body** - Send JSON or any payload with POST/PUT/PATCH requests
-- **⏱️ Configurable Timeout** - Set request timeout in seconds
 - **🎨 Beautiful TUI** - Colorful terminal output with progress bar
 - **📈 Real-time Progress** - Live progress bar showing request completion
 - **🛡️ Error Handling** - Graceful handling of failed requests with detailed reporting
+- **⏱️ Configurable Timeout** - Set request timeout in seconds
+
+### HTTP Features
+- **🔧 HTTP Methods** - Support for GET, POST, PUT, DELETE, PATCH, and HEAD
+- **📝 Custom Headers** - Add any custom headers including Authorization
+- **📦 Request Body** - Send JSON or any payload with POST/PUT/PATCH requests
+
+### FlashKV (TCP Key-Value) Features
+- **🗄️ Redis-like Commands** - PING, GET, SET, DEL, INCR, DECR, and more
+- **🔑 Random Keys** - Distribute load across key space with configurable random keys
+- **📋 Mixed Workloads** - Combine multiple commands (e.g., GET + SET)
+- **🎲 Custom Commands** - Send any raw TCP command to your database
 
 ---
 
@@ -153,18 +168,21 @@ rustyload -i
 ```
 
 The interactive mode will guide you through:
-1. ✅ Target URL
-2. ✅ HTTP Method (GET, POST, PUT, DELETE, etc.)
-3. ✅ Number of requests
-4. ✅ Concurrency level
-5. ✅ Timeout settings
-6. ✅ Custom headers (optional)
-7. ✅ Request body (optional)
+1. ✅ Select protocol (HTTP or FlashKV)
+2. ✅ Target URL or host:port
+3. ✅ Protocol-specific options (HTTP method or KV commands)
+4. ✅ Number of requests
+5. ✅ Concurrency level
+6. ✅ Timeout settings
+7. ✅ Additional options (headers, body, random keys)
+
+#### HTTP Interactive Example
 
 ```
 🚀 Interactive Mode - Let's configure your load test!
 ──────────────────────────────────────────────────
 
+? Select protocol: HTTP/HTTPS (Web APIs, REST endpoints)
 ? Target URL: https://api.example.com/health
 ? HTTP Method: GET
 ? Number of requests: 100
@@ -176,12 +194,39 @@ The interactive mode will guide you through:
 ✅ Configuration complete!
 ```
 
+#### FlashKV Interactive Example
+
+```
+🚀 Interactive Mode - Let's configure your load test!
+──────────────────────────────────────────────────
+
+? Select protocol: FlashKV (TCP key-value database)
+🗄️  FlashKV Load Test Configuration
+
+? FlashKV server host: localhost
+? FlashKV server port: 6379
+? Select workload type: GET + SET mixed workload
+? Base key: testkey
+? Value for SET operations: testvalue
+? Use random keys? Yes
+? Key prefix: user
+? Key range (0 to N-1): 10000
+? Number of requests: 1000
+? Concurrent connections: 50
+? Timeout (seconds): 10
+
+──────────────────────────────────────────────────
+✅ Configuration complete!
+```
+
 ### Quick Mode (For Power Users)
 
 If you know what you want, use CLI arguments:
 
+#### HTTP Examples
+
 ```bash
-# Basic usage with defaults (100 requests, 10 concurrent)
+# Basic HTTP usage with defaults (100 requests, 10 concurrent)
 rustyload -u https://httpbin.org/get
 
 # Custom requests and concurrency
@@ -191,19 +236,51 @@ rustyload -u https://api.example.com/health -n 500 -c 50
 rustyload -u https://httpbin.org/get -n 100 -c 10 -y
 ```
 
+#### FlashKV Examples
+
+```bash
+# Basic FlashKV PING test
+rustyload -p flashkv -u localhost:6379 -n 1000 -c 50
+
+# FlashKV with GET command
+rustyload -p flashkv -u localhost:6379 --command "GET mykey" -n 1000 -c 50
+
+# FlashKV with SET command
+rustyload -p flashkv -u localhost:6379 --command "SET mykey myvalue" -n 1000 -c 50 -y
+```
+
 ### Command Line Options
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--url` | `-u` | Target URL to test | - |
+| `--url` | `-u` | Target URL (HTTP) or host:port (FlashKV) | - |
+| `--protocol` | `-p` | Protocol: http, flashkv | http |
 | `--requests` | `-n` | Total number of requests to send | 100 |
 | `--concurrency` | `-c` | Number of concurrent requests | 10 |
+| `--command` | - | FlashKV command (e.g., "GET key", "SET key value") | PING |
 | `--interactive` | `-i` | Run in interactive mode | auto |
 | `--yes` | `-y` | Skip confirmation prompt | false |
 | `--help` | `-h` | Show help message | - |
 | `--version` | `-V` | Show version | - |
 
 > **Note:** If you don't provide a URL, RustyLoad automatically enters interactive mode!
+
+### Supported FlashKV Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `PING` | Check server connectivity | `PING` |
+| `GET` | Retrieve a value | `GET mykey` |
+| `SET` | Store a value | `SET mykey myvalue` |
+| `DEL` | Delete a key | `DEL mykey` |
+| `INCR` | Increment a numeric value | `INCR counter` |
+| `DECR` | Decrement a numeric value | `DECR counter` |
+| `EXISTS` | Check if key exists | `EXISTS mykey` |
+| `EXPIRE` | Set key expiration | `EXPIRE mykey 3600` |
+| `TTL` | Get time to live | `TTL mykey` |
+| `KEYS` | List keys matching pattern | `KEYS user:*` |
+| `LPUSH` | Push to list | `LPUSH mylist value` |
+| `LPOP` | Pop from list | `LPOP mylist` |
 
 ### Example Output
 
